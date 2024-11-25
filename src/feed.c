@@ -14,15 +14,15 @@ char user_fifo[100];
 int main_fifo_fd = -1;
 
 void *receive_messages(void *arg) {
-    (void)arg; // Evitar warning de parâmetro não utilizado
+    (void) arg; // Evitar warning de parâmetro não utilizado
 
     int user_fifo_fd = open(user_fifo, O_RDONLY | O_NONBLOCK);
     if (user_fifo_fd == -1) {
-        perror("Erro ao abrir FIFO do usuário");
+        perror("Erro ao abrir FIFO do utilizador");
         return NULL;
     }
 
-    struct pollfd pfd = { .fd = user_fifo_fd, .events = POLLIN };
+    struct pollfd pfd = {.fd = user_fifo_fd, .events = POLLIN};
     char buffer[MSG_MAX_LENGTH];
 
     while (1) {
@@ -51,7 +51,7 @@ int main(int argc, char *argv[]) {
     char *username = argv[1];
     snprintf(user_fifo, sizeof(user_fifo), USER_FIFO_TEMPLATE, username);
 
-    printf("Feed iniciado para o usuário: %s\n", username);
+    printf("Feed iniciado para o utilizador: %s\n", username);
     create_named_pipe(user_fifo);
 
     main_fifo_fd = open(MAIN_FIFO, O_WRONLY);
@@ -65,22 +65,21 @@ int main(int argc, char *argv[]) {
     strcpy(msg.username, username);
     strcpy(msg.command, "register");
     write(main_fifo_fd, &msg, sizeof(Message));
-    printf("Usuário %s registrado com sucesso no servidor.\n", username);
+    printf("Utilizador %s registado com sucesso no servidor.\n", username);
 
     pthread_t thread_id;
     pthread_create(&thread_id, NULL, receive_messages, NULL);
 
     while (1) {
-        printf("Digite um comando (msg, subscribe, unsubscribe, exit): ");
+        printf("Digite um comando (topics, msg, subscribe, unsubscribe, exit): ");
         char command[20];
         scanf("%s", command);
 
-        if (strcmp(command, "msg") == 0) {
-            printf("Digite o tópico: ");
-            scanf("%s", msg.topic);
-            printf("Digite a mensagem: ");
-            getchar(); // Consumir newline
-            fgets(msg.message, MSG_MAX_LENGTH, stdin);
+        if (strcmp(command, "topics") == 0) {
+            strcpy(msg.command, "topics");
+        } else if (strcmp(command, "msg") == 0) {
+            printf("Digite uma mensagem (<topico> <duração> <mensagem>): ");
+            scanf("%s %d %[^\n]", msg.topic, &msg.duration, msg.message);
             msg.message[strcspn(msg.message, "\n")] = '\0';
             msg.duration = 0; // Mensagens não persistentes
             strcpy(msg.command, "msg");
@@ -93,7 +92,7 @@ int main(int argc, char *argv[]) {
             write(main_fifo_fd, &msg, sizeof(msg));
             break;
         } else {
-            printf("Comando desconhecido. Tente novamente.\n");
+            printf("comando desconhecido. Tente novamente.\n");
             continue;
         }
 

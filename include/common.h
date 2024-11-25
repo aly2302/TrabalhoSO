@@ -8,7 +8,7 @@
 
 #define MAIN_FIFO "/tmp/manager_fifo" // Caminho do FIFO principal
 
-// Estrutura de Usuário
+// Estrutura de Utilizador
 typedef struct {
     char username[50];
     int is_active;

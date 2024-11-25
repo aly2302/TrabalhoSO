@@ -16,31 +16,31 @@ int user_count = 0;
 
 void register_user(const char *username) {
     if (user_count >= MAX_USERS) {
-        printf("Limite máximo de usuários atingido.\n");
+        printf("Limite máximo de utilizadores atingido.\n");
         return;
     }
     for (int i = 0; i < user_count; i++) {
         if (strcmp(users[i].username, username) == 0) {
-            printf("Usuário %s já está registrado.\n", username);
+            printf("Utilizador %s já está registado.\n", username);
             return;
         }
     }
     strcpy(users[user_count].username, username);
     users[user_count].is_active = 1;
     user_count++;
-    printf("Usuário %s registrado com sucesso.\n", username);
+    printf("Utilizador %s registado com sucesso.\n", username);
 }
 
 void handle_message(Message *msg) {
     if (strcmp(msg->command, "register") == 0) {
         register_user(msg->username);
-        printf("Usuário conectado: %s\n", msg->username);
+        printf("Utilizador conectado: %s\n", msg->username);
     } else if (strcmp(msg->command, "subscribe") == 0) {
         for (int i = 0; i < topic_count; i++) {
             if (strcmp(topics[i].name, msg->topic) == 0) {
                 strcpy(topics[i].subscribers[topics[i].sub_count], msg->username);
                 topics[i].sub_count++;
-                printf("Usuário %s inscrito no tópico %s.\n", msg->username, msg->topic);
+                printf("Utilizador %s inscrito no tópico %s.\n", msg->username, msg->topic);
                 return;
             }
         }
@@ -51,7 +51,7 @@ void handle_message(Message *msg) {
             topics[topic_count].is_locked = 0;
             topics[topic_count].message_count = 0;
             topic_count++;
-            printf("Tópico %s criado e usuário %s inscrito.\n", msg->topic, msg->username);
+            printf("Tópico %s criado e utilizador %s inscrito.\n", msg->topic, msg->username);
         }
     } else if (strcmp(msg->command, "msg") == 0) {
         for (int i = 0; i < topic_count; i++) {
@@ -80,7 +80,7 @@ void handle_message(Message *msg) {
         for (int i = 0; i < user_count; i++) {
             if (strcmp(users[i].username, msg->username) == 0) {
                 users[i].is_active = 0;
-                printf("Usuário %s desconectado.\n", msg->username);
+                printf("Utilizador %s desconectado.\n", msg->username);
                 return;
             }
         }
@@ -88,7 +88,7 @@ void handle_message(Message *msg) {
 }
 
 void list_users() {
-    printf("Usuários conectados:\n");
+    printf("Utilizadores conectados:\n");
     for (int i = 0; i < user_count; i++) {
         if (users[i].is_active) {
             printf("- %s\n", users[i].username);
@@ -121,7 +121,7 @@ int main() {
             printf("Comando recebido: %s de %s\n", msg.command, msg.username);
             if (strcmp(msg.command, "list_users") == 0) {
                 list_users();
-            } else if (strcmp(msg.command, "list_topics") == 0) {
+            } else if (strcmp(msg.command, "topics") == 0) {
                 list_topics();
             } else {
                 handle_message(&msg);
