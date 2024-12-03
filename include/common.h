@@ -14,23 +14,21 @@ typedef struct {
     int is_active;
 } User;
 
+// Estrutura de Mensagem
+typedef struct {
+    char username[50];
+    char content[MSG_MAX_LENGTH];
+    int duration; // Tempo de vida (persistência)
+} Message;
+
 // Estrutura de Tópico
 typedef struct {
     char name[TOPIC_NAME_LENGTH];
     int is_locked;
     char subscribers[MAX_USERS][50];
     int sub_count;
-    char messages[5][MSG_MAX_LENGTH];
+    Message messages[5];
     int message_count;
 } Topic;
-
-// Estrutura de Mensagem
-typedef struct {
-    char username[50];
-    char command[20];
-    char topic[TOPIC_NAME_LENGTH];
-    char message[MSG_MAX_LENGTH];
-    int duration; // Tempo de vida (persistência)
-} Message;
 
 #endif // COMMON_H

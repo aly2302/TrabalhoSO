@@ -12,4 +12,3 @@ void lock_semaphore(sem_t *semaphore);
 void unlock_semaphore(sem_t *semaphore);
 
 #endif // UTILS_H
-
