@@ -28,10 +28,15 @@ void init_semaphore(sem_t *semaphore) {
 }
 
 void lock_semaphore(sem_t *semaphore) {
-    sem_wait(semaphore);
+    if (sem_wait(semaphore) != 0) {
+        perror("Erro ao bloquear semáforo");
+        exit(EXIT_FAILURE);
+    }
 }
 
 void unlock_semaphore(sem_t *semaphore) {
-    sem_post(semaphore);
+    if (sem_post(semaphore) != 0) {
+        perror("Erro ao desbloquear semáforo");
+        exit(EXIT_FAILURE);
+    }
 }
-
