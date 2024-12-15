@@ -4,7 +4,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
-#include <semaphore.h>
 
 void create_named_pipe(const char *path) {
     if (access(path, F_OK) == 0) {
@@ -20,23 +19,3 @@ void create_named_pipe(const char *path) {
     }
 }
 
-void init_semaphore(sem_t *semaphore) {
-    if (sem_init(semaphore, 0, 1) == -1) {
-        perror("Erro ao inicializar semáforo");
-        exit(EXIT_FAILURE);
-    }
-}
-
-void lock_semaphore(sem_t *semaphore) {
-    if (sem_wait(semaphore) != 0) {
-        perror("Erro ao bloquear semáforo");
-        exit(EXIT_FAILURE);
-    }
-}
-
-void unlock_semaphore(sem_t *semaphore) {
-    if (sem_post(semaphore) != 0) {
-        perror("Erro ao desbloquear semáforo");
-        exit(EXIT_FAILURE);
-    }
-}

@@ -19,7 +19,7 @@ void *receive_messages(void *arg) {
     int user_fifo_fd = open(user_fifo, O_RDONLY | O_NONBLOCK);
     if (user_fifo_fd == -1) {
         perror("Erro ao abrir FIFO do utilizador");
-        return NULL;
+        pthread_exit(NULL);
     }
 
     fd_set read_fds;
@@ -49,7 +49,7 @@ void *receive_messages(void *arg) {
     }
 
     close(user_fifo_fd);
-    return NULL;
+    pthread_exit(NULL);
 }
 
 
@@ -72,7 +72,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Enviar mensagem de registro ao servidor
+    // Enviar mensagem de registo ao servidor
     Message msg = {0};
     strcpy(msg.username, username);
     snprintf(msg.content, sizeof(msg.content), "register");
@@ -80,7 +80,7 @@ int main(int argc, char *argv[]) {
     printf("Utilizador %s registado com sucesso no servidor.\n", username);
 
     pthread_t thread_id;
-    pthread_create(&thread_id, NULL, receive_messages, NULL);
+    pthread_create(&thread_id, NULL, &receive_messages, NULL);
 
     while (1) {
         printf("Digite um comando (topics, msg, subscribe, unsubscribe, exit): ");
@@ -89,7 +89,6 @@ int main(int argc, char *argv[]) {
 
         if (strcmp(command, "topics") == 0) {
             // Solicitar tópicos ao servidor
-            strcpy(msg.username, username);
             snprintf(msg.content, sizeof(msg.content), "topics");
             write(main_fifo_fd, &msg, sizeof(msg));
         } else if (strcmp(command, "msg") == 0) {
@@ -103,22 +102,18 @@ int main(int argc, char *argv[]) {
                 printf("Erro: Mensagem muito longa, tente novamente.");
                 continue;
             }
-            strcpy(msg.username, username);
         } else if (strcmp(command, "subscribe") == 0) {
             printf("Digite o tópico: ");
             char topic[TOPIC_NAME_LENGTH];
             scanf("%19s", topic);
             snprintf(msg.content, sizeof(msg.content), "subscribe %s", topic);
-            strcpy(msg.username, username);
         } else if (strcmp(command, "unsubscribe") == 0) {
             printf("Digite o tópico: ");
             char topic[TOPIC_NAME_LENGTH];
             scanf("%19s", topic);
             snprintf(msg.content, sizeof(msg.content), "unsubscribe %s", topic);
-            strcpy(msg.username, username);
         } else if (strcmp(command, "exit") == 0) {
             snprintf(msg.content, sizeof(msg.content), "exit");
-            strcpy(msg.username, username);
             write(main_fifo_fd, &msg, sizeof(msg));
             break;
         } else {

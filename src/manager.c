@@ -22,7 +22,7 @@ int user_count = 0;
 pthread_mutex_t topics_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t users_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// Function Prototypes
+
 void register_user(const char *username);
 void remove_user(const char *username);
 void list_topics();
@@ -231,8 +231,55 @@ void subscribe_to_topic(const char *username, const char *topic_name) {
     pthread_mutex_unlock(&topics_mutex);
 }
 
+void unsubscribe_from_topic(const char *username, const char *topic_name) {
+    pthread_mutex_lock(&topics_mutex);
+
+    int topic_index = -1;
+
+    // Procurar pelo tópico
+    for (int i = 0; i < topic_count; i++) {
+        if (strcmp(topics[i].name, topic_name) == 0) {
+            topic_index = i;
+            break;
+        }
+    }
+
+    if (topic_index == -1) {
+        printf("Tópico %s não encontrado.\n", topic_name);
+        pthread_mutex_unlock(&topics_mutex);
+        return;
+    }
+
+    int user_index = -1;
+
+    // Verificar se o utilizador está inscrito no tópico
+    for (int i = 0; i < topics[topic_index].sub_count; i++) {
+        if (strcmp(topics[topic_index].subscribers[i], username) == 0) {
+            user_index = i;
+            break;
+        }
+    }
+
+    if (user_index == -1) {
+        printf("Utilizador %s não está inscrito no tópico %s.\n", username, topic_name);
+        pthread_mutex_unlock(&topics_mutex);
+        return;
+    }
+
+    // Remover o utilizador da lista de inscritos
+    for (int i = user_index; i < topics[topic_index].sub_count - 1; i++) {
+        strcpy(topics[topic_index].subscribers[i], topics[topic_index].subscribers[i + 1]);
+    }
+
+    topics[topic_index].sub_count--;
+    printf("Utilizador %s removido do tópico %s.\n", username, topic_name);
+
+    pthread_mutex_unlock(&topics_mutex);
+}
+
+
 void handle_message(Message *msg) {
-    if (strncmp(msg->content, "register", 8) == 0) {
+    if (strcmp(msg->content, "register") == 0) {
         register_user(msg->username);
     } else if (strncmp(msg->content, "subscribe", 9) == 0) {
         char topic_name[TOPIC_NAME_LENGTH];
@@ -268,16 +315,20 @@ void handle_message(Message *msg) {
                     topics[i].message_count++;
                 }
                 pthread_mutex_unlock(&topics_mutex);
-                printf("Mensagem enviada no tópico %s.\n", topic_name);
+                printf("Mensagem enviada ao tópico %s.\n", topic_name);
                 return;
             }
         }
         pthread_mutex_unlock(&topics_mutex);
         printf("Falha ao enviar mensagem. Tópico bloqueado ou inexistente.\n");
-    } else if (strncmp(msg->content, "exit", 4) == 0) {
+    } else if (strcmp(msg->content, "exit") == 0) {
         remove_user(msg->username);
-    } else if (strncmp(msg->content, "topics", 6) == 0) {
+    } else if (strcmp(msg->content, "topics") == 0) {
         list_topics();
+    } else if (strcmp(msg->content, "unsubscribe") == 0) {
+        char topic_name[TOPIC_NAME_LENGTH];
+        sscanf(msg->content + 10, "%19s", topic_name);
+        unsubscribe_from_topic(msg->username, topic_name);
     }
 }
 
@@ -292,11 +343,11 @@ void *admin_commands(void *arg) {
         }
         command[strcspn(command, "\n")] = 0; // Remover newline
 
-        if (strcmp(command, "list_users") == 0) {
+        if (strcmp(command, "users") == 0) {
             list_users();
         } else if (strncmp(command, "remove ", 7) == 0) {
             remove_user(command + 7);
-        } else if (strcmp(command, "list_topics") == 0) {
+        } else if (strcmp(command, "topics") == 0) {
             list_topics();
         } else if (strncmp(command, "show ", 5) == 0) {
             show_topic_messages(command + 5);
@@ -311,7 +362,7 @@ void *admin_commands(void *arg) {
             printf("Comando desconhecido.\n");
         }
     }
-    return NULL;
+    pthread_exit(NULL);
 }
 
 void *expire_messages(void *arg) {
