@@ -11,13 +11,16 @@
 #include <pthread.h>
 #include <errno.h>
 
+
 #define MAIN_FIFO "/tmp/manager_fifo"
-#define MSG_FILE "messages.txt"
+
+
 
 Topic topics[MAX_TOPICS];
 User users[MAX_USERS];
 int topic_count = 0;
 int user_count = 0;
+char *MSG_FILE = "messages.txt";
 
 pthread_mutex_t topics_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t users_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -31,62 +34,94 @@ void lock_topic(const char *topic_name);
 void unlock_topic(const char *topic_name);
 void show_topic_messages(const char *topic_name);
 void subscribe_to_topic(const char *username, const char *topic_name);
+void unsubscribe_from_topic(const char* username, const char *topic_name);
 void handle_message(Message *msg);
 void *admin_commands(void *arg);
 void *expire_messages(void *arg);
+void save_persistent_messages();
 
+// Signal handler for graceful termination
 void handle_sigint(int sig) {
     (void)sig;   
     printf("\nEncerrando manager...\n");
-    // Salvar mensagens persistentes em arquivo
-    FILE *fp = fopen(MSG_FILE, "w");
-    if (fp) {
-        for (int i = 0; i < topic_count; i++) {
-            for (int j = 0; j < topics[i].message_count; j++) {
-                if (topics[i].messages[j].duration > 0) {
-                    fprintf(fp, "%s %s %d %s\n", topics[i].name, topics[i].messages[j].username, topics[i].messages[j].duration, topics[i].messages[j].content);
-                }
-            }
-        }
-        fclose(fp);
-    }
+    save_persistent_messages();
     unlink(MAIN_FIFO);
     exit(0);
 }
 
 void load_persistent_messages() {
-    FILE *fp = fopen(MSG_FILE, "r");
-    if (fp) {
-        char topic_name[TOPIC_NAME_LENGTH];
-        char username[50];
-        int remaining_time;
-        char message_content[MSG_MAX_LENGTH];
+    const char *msg_fich = getenv("MSG_FICH");
+    if (msg_fich) {
+        MSG_FILE = malloc(strlen(msg_fich) + 1);
+        if (MSG_FILE) {
+            strcpy(MSG_FILE, msg_fich);
+        }
+    }
 
-        while (fscanf(fp, "%19s %49s %d %299[^\n]", topic_name, username, &remaining_time, message_content) == 4) {
-            int topic_index = -1;
-            for (int i = 0; i < topic_count; i++) {
-                if (strcmp(topics[i].name, topic_name) == 0) {
-                    topic_index = i;
-                    break;
-                }
-            }
-            if (topic_index == -1 && topic_count < MAX_TOPICS) {
-                topic_index = topic_count++;
-                strcpy(topics[topic_index].name, topic_name);
-                topics[topic_index].is_locked = 0;
-                topics[topic_index].message_count = 0;
-                topics[topic_index].sub_count = 0;
-            }
-            if (topic_index != -1 && topics[topic_index].message_count < 5) {
-                Message *msg = &topics[topic_index].messages[topics[topic_index].message_count++];
-                strcpy(msg->username, username);
-                strcpy(msg->content, message_content);
-                msg->duration = remaining_time;
+    FILE *fp = fopen(MSG_FILE, "r");
+    if (!fp) {
+        printf("[INFO] No persistent messages file found or error loading it.\n");
+        return;
+    }
+
+    char topic_name[TOPIC_NAME_LENGTH];
+    char username[50];
+    int remaining_time;
+    char message_content[MSG_MAX_LENGTH];
+
+    while (fscanf(fp, "%19s %49s %d %299[^\n]", topic_name, username, &remaining_time, message_content) == 4) {
+        if (remaining_time <= 0) continue;
+
+        int topic_index = -1;
+        for (int i = 0; i < topic_count; i++) {
+            if (strcmp(topics[i].name, topic_name) == 0) {
+                topic_index = i;
+                break;
             }
         }
-        fclose(fp);
+
+        if (topic_index == -1 && topic_count < MAX_TOPICS) {
+            topic_index = topic_count++;
+            strcpy(topics[topic_index].name, topic_name);
+            topics[topic_index].is_locked = 0;
+            topics[topic_index].message_count = 0;
+            topics[topic_index].sub_count = 0;
+        }
+
+        if (topic_index != -1 && topics[topic_index].message_count < 5) {
+            Message *msg = &topics[topic_index].messages[topics[topic_index].message_count++];
+            strcpy(msg->username, username);
+            strcpy(msg->content, message_content);
+            msg->duration = remaining_time;
+        }
     }
+
+    fclose(fp);
+    printf("[INFO] Persistent messages loaded from %s\n", MSG_FILE);
 }
+
+
+
+
+void save_persistent_messages() {
+    FILE *fp = fopen(MSG_FILE, "w");
+    if (!fp) {
+        perror("[ERROR] Could not open file to save persistent messages");
+        return;
+    }
+
+    for (int i = 0; i < topic_count; i++) {
+        for (int j = 0; j < topics[i].message_count; j++) {
+            if (topics[i].messages[j].duration > 0) {
+                fprintf(fp, "%s %s %d %s\n", topics[i].name, topics[i].messages[j].username, topics[i].messages[j].duration, topics[i].messages[j].content);
+            }
+        }
+    }
+
+    fclose(fp);
+    printf("[INFO] Persistent messages saved to %s\n", MSG_FILE);
+}
+
 
 void register_user(const char *username) {
     pthread_mutex_lock(&users_mutex);
@@ -227,59 +262,180 @@ void subscribe_to_topic(const char *username, const char *topic_name) {
     }
 
     strcpy(topics[topic_index].subscribers[topics[topic_index].sub_count++], username);
+   
+
+	// Send persistent messages to the new subscriber
+    char user_fifo[100];
+    sprintf(user_fifo, "/tmp/feed_%s", username);
+    int user_fd = open(user_fifo, O_WRONLY | O_NONBLOCK);
+    if (user_fd >= 0) {
+        for (int i = 0; i < topics[topic_index].message_count; i++) {
+            char notification[MSG_MAX_LENGTH + 100];
+            snprintf(notification, sizeof(notification), "[%s]: %s", topics[topic_index].messages[i].username, topics[topic_index].messages[i].content);
+            write(user_fd, notification, strlen(notification) + 1);
+        }
+        close(user_fd);
+    }
+
     printf("Utilizador %s inscrito no tópico %s.\n", username, topic_name);
     pthread_mutex_unlock(&topics_mutex);
 }
 
+
+
+void unsubscribe_from_topic(const char *username, const char *topic_name) {
+    pthread_mutex_lock(&topics_mutex);
+
+    int topic_index = -1;
+    for (int i = 0; i < topic_count; i++) {
+        if (strcmp(topics[i].name, topic_name) == 0) {
+            topic_index = i;
+            break;
+        }
+    }
+
+    if (topic_index == -1) {
+        printf("[ERROR] Topic %s does not exist.\n", topic_name);
+        pthread_mutex_unlock(&topics_mutex);
+        return;
+    }
+
+    // Find and remove the user from the topic's subscribers
+    int user_found = 0;
+    for (int i = 0; i < topics[topic_index].sub_count; i++) {
+        if (strcmp(topics[topic_index].subscribers[i], username) == 0) {
+            user_found = 1;
+            for (int j = i; j < topics[topic_index].sub_count - 1; j++) {
+                strcpy(topics[topic_index].subscribers[j], topics[topic_index].subscribers[j + 1]);
+            }
+            topics[topic_index].sub_count--;
+            break;
+        }
+    }
+
+    if (!user_found) {
+        printf("[ERROR] User %s is not subscribed to topic %s.\n", username, topic_name);
+    } else {
+        printf("[INFO] User %s unsubscribed from topic %s.\n", username, topic_name);
+    }
+
+    pthread_mutex_unlock(&topics_mutex);
+}
+
+
+
+
 void handle_message(Message *msg) {
     if (strncmp(msg->content, "register", 8) == 0) {
+        // Register the user
         register_user(msg->username);
+
     } else if (strncmp(msg->content, "subscribe", 9) == 0) {
+        // Subscribe the user to a topic
         char topic_name[TOPIC_NAME_LENGTH];
         sscanf(msg->content + 10, "%19s", topic_name);
         subscribe_to_topic(msg->username, topic_name);
+
+    } else if (strncmp(msg->content, "unsubscribe", 11) == 0) {
+        // Unsubscribe the user from a topic
+        char topic_name[TOPIC_NAME_LENGTH];
+        sscanf(msg->content + 12, "%19s", topic_name);
+        unsubscribe_from_topic(msg->username, topic_name);
+
     } else if (strncmp(msg->content, "msg", 3) == 0) {
+        // Send a message to a topic
         pthread_mutex_lock(&topics_mutex);
+
         char topic_name[TOPIC_NAME_LENGTH];
         int duration;
         char message_content[MSG_MAX_LENGTH];
         sscanf(msg->content + 4, "%19s %d %299[^\n]", topic_name, &duration, message_content);
 
         for (int i = 0; i < topic_count; i++) {
-            if (strcmp(topics[i].name, topic_name) == 0 && !topics[i].is_locked) {
-                // Enviar mensagem para todos os inscritos
+            if (strcmp(topics[i].name, topic_name) == 0) {
+                // Check if the user is subscribed to the topic
+                int is_subscribed = 0;
                 for (int j = 0; j < topics[i].sub_count; j++) {
-                    if (strcmp(topics[i].subscribers[j], msg->username) != 0) {
-                        char user_fifo[100];
-                        sprintf(user_fifo, "/tmp/feed_%s", topics[i].subscribers[j]);
-                        int user_fd = open(user_fifo, O_WRONLY | O_NONBLOCK);
-                        if (user_fd >= 0) {
-                            write(user_fd, message_content, strlen(message_content) + 1);
-                            close(user_fd);
-                        }
+                    if (strcmp(topics[i].subscribers[j], msg->username) == 0) {
+                        is_subscribed = 1;
+                        break;
                     }
                 }
 
-                // Adicionar mensagem ao tópico
-                if (topics[i].message_count < 5) {
-                    strcpy(topics[i].messages[topics[i].message_count].username, msg->username);
-                    strcpy(topics[i].messages[topics[i].message_count].content, message_content);
-                    topics[i].messages[topics[i].message_count].duration = duration;
-                    topics[i].message_count++;
+                if (!is_subscribed) {
+                    printf("[ERROR] User %s is not subscribed to topic %s.\n", msg->username, topic_name);
+                    pthread_mutex_unlock(&topics_mutex);
+                    return;
                 }
+
+                if (topics[i].is_locked) {
+                    printf("[ERROR] Topic %s is locked. Message not sent.\n", topic_name);
+                    pthread_mutex_unlock(&topics_mutex);
+                    return;
+                }
+
+                // Send the message to all subscribers
+                for (int j = 0; j < topics[i].sub_count; j++) {
+                    char user_fifo[100];
+                    sprintf(user_fifo, "/tmp/feed_%s", topics[i].subscribers[j]);
+                    int user_fd = open(user_fifo, O_WRONLY | O_NONBLOCK);
+                    if (user_fd >= 0) {
+                        char notification[MSG_MAX_LENGTH + 100];
+                        snprintf(notification, sizeof(notification), "[%s]: %s", msg->username, message_content);
+                        write(user_fd, notification, strlen(notification) + 1);
+                        close(user_fd);
+                    }
+                }
+
+                // Add the message to the topic's persistent storage
+                if (topics[i].message_count < 5) {
+                    Message *new_msg = &topics[i].messages[topics[i].message_count++];
+                    strcpy(new_msg->username, msg->username);
+                    strcpy(new_msg->content, message_content);
+                    new_msg->duration = duration;
+                }
+
                 pthread_mutex_unlock(&topics_mutex);
-                printf("Mensagem enviada no tópico %s.\n", topic_name);
+                printf("[INFO] Message sent to topic %s by user %s.\n", topic_name, msg->username);
                 return;
             }
         }
+
         pthread_mutex_unlock(&topics_mutex);
-        printf("Falha ao enviar mensagem. Tópico bloqueado ou inexistente.\n");
+        printf("[ERROR] Topic %s does not exist.\n", topic_name);
+
     } else if (strncmp(msg->content, "exit", 4) == 0) {
+        // Remove the user from the platform
         remove_user(msg->username);
+
     } else if (strncmp(msg->content, "topics", 6) == 0) {
+        // List all available topics
         list_topics();
+
+    } else if (strncmp(msg->content, "lock", 4) == 0) {
+        // Lock a topic (admin command)
+        char topic_name[TOPIC_NAME_LENGTH];
+        sscanf(msg->content + 5, "%19s", topic_name);
+        lock_topic(topic_name);
+
+    } else if (strncmp(msg->content, "unlock", 6) == 0) {
+        // Unlock a topic (admin command)
+        char topic_name[TOPIC_NAME_LENGTH];
+        sscanf(msg->content + 7, "%19s", topic_name);
+        unlock_topic(topic_name);
+
+    } else if (strncmp(msg->content, "show", 4) == 0) {
+        // Show all messages of a topic (admin command)
+        char topic_name[TOPIC_NAME_LENGTH];
+        sscanf(msg->content + 5, "%19s", topic_name);
+        show_topic_messages(topic_name);
+
+    } else {
+        // Handle unknown commands
+        printf("[ERROR] Unknown command received: %s\n", msg->content);
     }
 }
+
 
 void *admin_commands(void *arg) {
     (void)arg;

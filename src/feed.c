@@ -13,8 +13,9 @@
 char user_fifo[100];
 int main_fifo_fd = -1;
 
+// Thread function to receive messages from the manager
 void *receive_messages(void *arg) {
-    (void)arg; // Evitar warning de parâmetro não utilizado
+    (void)arg; // Avoid unused parameter warning
 
     int user_fifo_fd = open(user_fifo, O_RDONLY | O_NONBLOCK);
     if (user_fifo_fd == -1) {
@@ -23,7 +24,7 @@ void *receive_messages(void *arg) {
     }
 
     fd_set read_fds;
-    char buffer[MSG_MAX_LENGTH];
+    char buffer[MSG_MAX_LENGTH + TOPIC_NAME_LENGTH + 50]; // Increased size for formatting
 
     while (1) {
         FD_ZERO(&read_fds);
@@ -36,7 +37,7 @@ void *receive_messages(void *arg) {
                 buffer[bytes_read] = '\0';
                 printf("\nMensagem recebida: %s\n", buffer);
 
-                // Verificar se a mensagem é "exit" para encerrar o feed
+                // Check for "exit" message
                 if (strcmp(buffer, "exit") == 0) {
                     printf("Encerrando feed do utilizador...\n");
                     break;
@@ -52,7 +53,13 @@ void *receive_messages(void *arg) {
     return NULL;
 }
 
-
+// Function to request persistent messages for a topic
+void request_persistent_messages(const char *username, const char *topic) {
+    Message msg = {0};
+    strcpy(msg.username, username);
+    snprintf(msg.content, sizeof(msg.content), "show %s", topic);
+    write(main_fifo_fd, &msg, sizeof(Message));
+}
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -72,7 +79,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Enviar mensagem de registro ao servidor
+    // Register user with the manager
     Message msg = {0};
     strcpy(msg.username, username);
     snprintf(msg.content, sizeof(msg.content), "register");
@@ -85,10 +92,10 @@ int main(int argc, char *argv[]) {
     while (1) {
         printf("Digite um comando (topics, msg, subscribe, unsubscribe, exit): ");
         char command[20];
-        scanf("%s", command);
+        scanf("%19s", command);
 
         if (strcmp(command, "topics") == 0) {
-            // Solicitar tópicos ao servidor
+            // Request topics from the manager
             strcpy(msg.username, username);
             snprintf(msg.content, sizeof(msg.content), "topics");
             write(main_fifo_fd, &msg, sizeof(msg));
@@ -100,7 +107,7 @@ int main(int argc, char *argv[]) {
             scanf("%19s %d %299[^\n]", topic, &duration, content);
             content[strcspn(content, "\n")] = '\0';
             if (snprintf(msg.content, sizeof(msg.content), "msg %s %d %s", topic, duration, content) >= (int)sizeof(msg.content)) {
-                printf("Erro: Mensagem muito longa, tente novamente.");
+                printf("Erro: Mensagem muito longa, tente novamente.\n");
                 continue;
             }
             strcpy(msg.username, username);
@@ -110,6 +117,9 @@ int main(int argc, char *argv[]) {
             scanf("%19s", topic);
             snprintf(msg.content, sizeof(msg.content), "subscribe %s", topic);
             strcpy(msg.username, username);
+
+            // Request persistent messages for the topic
+            request_persistent_messages(username, topic);
         } else if (strcmp(command, "unsubscribe") == 0) {
             printf("Digite o tópico: ");
             char topic[TOPIC_NAME_LENGTH];
@@ -122,14 +132,17 @@ int main(int argc, char *argv[]) {
             write(main_fifo_fd, &msg, sizeof(msg));
             break;
         } else {
-            printf("comando desconhecido. Tente novamente.\n");
+            printf("Comando desconhecido. Tente novamente.\n");
             continue;
         }
 
         write(main_fifo_fd, &msg, sizeof(msg));
     }
 
+    // Clean up resources
+    pthread_join(thread_id, NULL);
     close(main_fifo_fd);
     unlink(user_fifo);
+    printf("Feed encerrado com sucesso.\n");
     return 0;
 }

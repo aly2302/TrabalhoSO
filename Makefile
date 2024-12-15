@@ -16,6 +16,9 @@ INCLUDES = -I$(INCLUDE_DIR)
 MANAGER = $(BUILD_DIR)/manager
 FEED = $(BUILD_DIR)/feed
 
+
+export MSG_FICH = messages.txt
+
 # Alvo principal
 all: $(BUILD_DIR) $(MANAGER) $(FEED)
 
