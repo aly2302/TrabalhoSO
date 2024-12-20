@@ -1,1 +1,2 @@
-futebol user3 66 mensagemPersistenteTeste
+SO user1 9959 ola user1 e user2
+SO user1 99990 Ola user2
